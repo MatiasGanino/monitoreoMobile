@@ -1,0 +1,193 @@
+import {useEffect, useState, useRef} from 'react';
+import axios from "axios";
+import * as SecureStore from "expo-secure-store";
+import {SafeAreaView, StatusBar, Text, View, Alert, Image, TouchableOpacity} from "react-native";
+import * as LocalAuthentication from 'expo-local-authentication';
+import * as Location from 'expo-location';
+import { Picker } from '@react-native-picker/picker';
+import Styles from "./Styles";
+
+//axios.defaults.baseURL = 'http://192.168.0.212:8080'; // Cambia aquí si usas otra IP o puerto
+axios.defaults.baseURL = 'https://flaggy-willis-sociologistically.ngrok-free.app'; // NGROK URL
+axios.interceptors.response.use(
+    function (response) {
+        return response;
+    },
+    function (error) {
+        const err = (error + '').includes('Network Error') ? 'Verifique su conexión a Internet' : error;
+        return Promise.reject(new Error(err));
+    }
+);
+
+const App = () => {
+    const [ubicacion, setUbicacion] = useState(null);
+    const [errorUbicacion, setErrorUbicacion] = useState(null);
+    const [mostrandoHuella, setMostrandoHuella] = useState(false);
+    const [personas, setPersonas] = useState([]);
+    const [idPersonaSeleccionada, setIdPersonaSeleccionada] = useState(null);
+    const autenticado = useRef(false);
+    const huellaEnProceso = useRef(false);
+    const ubicacionEnProceso = useRef(false);
+
+    useEffect(() => {
+        // Guardar la URL base en SecureStore si lo necesitas en otros lugares
+        SecureStore.setItemAsync('publicURL', axios.defaults.baseURL);
+    }, []);
+
+    useEffect(() => {
+        // Obtener personas
+        console.log('Intentando obtener personas desde:', axios.defaults.baseURL + '/api/personas');
+        axios.get('/api/personas')
+            .then(res => {
+                setPersonas(res.data);
+                console.log('Personas obtenidas:', res.data);
+                if (res.data.length > 0) setIdPersonaSeleccionada(res.data[0].id);
+            })
+            .catch((err) => {
+                setPersonas([]);
+                console.error('Error al obtener personas:', err);
+                Alert.alert('Error', 'No se pudo obtener la lista de personas.\n' + err);
+            });
+    }, []);
+
+    useEffect(() => {
+        let interval;
+        interval = setInterval(async () => {
+            if (ubicacionEnProceso.current) return;
+            try {
+                // Consultar si hay llamada pendiente para idpersona seleccionada
+                if (!idPersonaSeleccionada) return;
+                const res = await axios.get('/api/llamadas/ultima-pendiente', {
+                    params: { idpersona: idPersonaSeleccionada }
+                });
+                const hayPendiente = Array.isArray(res.data) && res.data.length > 0;
+                if (hayPendiente && !autenticado.current && !huellaEnProceso.current) {
+                    huellaEnProceso.current = true;
+                    setMostrandoHuella(true);
+                    const result = await LocalAuthentication.authenticateAsync({
+                        promptMessage: 'Por favor, pon tu huella',
+                        fallbackLabel: 'Usar código',
+                    });
+                    setMostrandoHuella(false);
+                    if (result.success) {
+                        autenticado.current = true;
+                        // Cambiar estado a 'verificado' en la llamada pendiente
+                        if (res.data[0] && res.data[0].id) {
+                            await axios.put(`/api/llamadas/${res.data[0].id}`, { estado: 'verificado' });
+                        }
+                    } else {
+                        // Cambiar estado a 'rechazado' en la llamada pendiente
+                        if (res.data[0] && res.data[0].id) {
+                            await axios.put(`/api/llamadas/${res.data[0].id}`, { estado: 'rechazado' });
+                        }
+                        Alert.alert('Autenticación fallida', 'Debes autenticarte para continuar.');
+                    }
+                    huellaEnProceso.current = false;
+                } else if (!hayPendiente) {
+                    autenticado.current = false;
+                }
+                if (autenticado.current || !hayPendiente) {
+                    ubicacionEnProceso.current = true;
+                    await obtenerUbicacion();
+                    ubicacionEnProceso.current = false;
+                }
+            } catch (e) {
+                setErrorUbicacion('No se pudo verificar el estado de llamada.');
+                ubicacionEnProceso.current = false;
+            }
+        }, 5000);
+        return () => clearInterval(interval);
+    }, [idPersonaSeleccionada]);
+
+    const obtenerUbicacion = async () => {
+        setErrorUbicacion(null);
+        try {
+            let { status } = await Location.requestForegroundPermissionsAsync();
+            if (status !== 'granted') {
+                setErrorUbicacion('Permiso de ubicación denegado');
+                setUbicacion(null);
+                return;
+            }
+
+            let location = await Location.getCurrentPositionAsync({});
+            const nuevaUbicacion = {
+                latitud: location.coords.latitude,
+                longitud: location.coords.longitude,
+                timestamp: new Date(location.timestamp).toLocaleString()
+            };
+            setUbicacion(nuevaUbicacion);
+            console.log('Ubicación obtenida:', nuevaUbicacion);
+
+            // Enviar al backend usando axios
+            try {
+                if (!idPersonaSeleccionada) return;
+                const response = await axios.post('/api/ubicaciones', {
+                    idPersona: idPersonaSeleccionada, // Usar el ID seleccionado
+                    latitud: nuevaUbicacion.latitud,
+                    longitud: nuevaUbicacion.longitud,
+                    fechaHora: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString()
+                });
+                if (response.status !== 200 && response.status !== 201) {
+                    Alert.alert('Error', 'No se pudo enviar la ubicación');
+                }
+            } catch (error) {
+                console.error('Error enviando ubicación:', error);
+                Alert.alert('Error', 'No se pudo enviar la ubicación al backend');
+            }
+
+        } catch (e) {
+            console.error(e);
+            setErrorUbicacion('No se pudo obtener la ubicación');
+            setUbicacion(null);
+        }
+    };
+
+
+    return (
+        <SafeAreaView style={Styles.container}>
+            <View style={{ alignItems: 'center', marginTop: 20 }}>
+                <Text style={{ fontSize: 28, fontWeight: 'bold', color: '#fff' }}>
+                    Seguimiento Biométrico
+                </Text>
+            </View>
+            <View style={Styles.centered}>
+                {/* Desplegable para elegir persona */}
+                <View style={Styles.pickerContainer}>
+                    <Text style={Styles.title}>Persona</Text>
+                    <Picker
+                        selectedValue={idPersonaSeleccionada}
+                        style={{ height: 50, width: 240, color: '#16325c', backgroundColor: '#fff', borderRadius: 8 }}
+                        dropdownIconColor="#16325c"
+                        onValueChange={(itemValue) => setIdPersonaSeleccionada(itemValue)}
+                    >
+                        {personas.map(persona => (
+                            <Picker.Item key={persona.id} label={persona.nombre || `Persona ${persona.id}`} value={persona.id} />
+                        ))}
+                    </Picker>
+                </View>
+                <View style={Styles.tobilleraImageContainer}>
+                    <Image source={require('./assets/images/tobillera.jpg')} style={Styles.tobilleraImage} />
+                </View>
+                <Text style={Styles.subtitle}>
+                    {mostrandoHuella ? 'Por favor, coloca tu huella para registrar tu presencia' : ''}
+                </Text>
+                <TouchableOpacity onPress={obtenerUbicacion} activeOpacity={0.7} style={{alignItems:'center'}}>
+                    <Text style={Styles.fingerprintIcon}>🌎</Text>
+                </TouchableOpacity>
+                {ubicacion && (
+                    <View style={{marginTop: 20, backgroundColor: '#fff2', borderRadius: 10, padding: 12}}>
+                        <Text style={{color:'#fff', fontWeight:'bold'}}>Ubicación registrada:</Text>
+                        <Text style={{color:'#fff'}}>Latitud: {ubicacion.latitud}</Text>
+                        <Text style={{color:'#fff'}}>Longitud: {ubicacion.longitud}</Text>
+                        <Text style={{color:'#fff'}}>Fecha y hora: {ubicacion.timestamp}</Text>
+                    </View>
+                )}
+                {errorUbicacion && (
+                    <Text style={{color:'red', marginTop:10}}>{errorUbicacion}</Text>
+                )}
+            </View>
+        </SafeAreaView>
+    );
+};
+
+export default App;
