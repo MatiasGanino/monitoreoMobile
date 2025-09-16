@@ -1,7 +1,7 @@
-import {useEffect, useState, useRef} from 'react';
+import {useEffect, useState, useRef, useCallback} from 'react';
 import axios from "axios";
 import * as SecureStore from "expo-secure-store";
-import {SafeAreaView, StatusBar, Text, View, Alert, Image, TouchableOpacity} from "react-native";
+import {SafeAreaView, Text, View, Alert, Image, TouchableOpacity} from "react-native";
 import * as LocalAuthentication from 'expo-local-authentication';
 import * as Location from 'expo-location';
 import { Picker } from '@react-native-picker/picker';
@@ -50,56 +50,7 @@ const App = () => {
             });
     }, []);
 
-    useEffect(() => {
-        let interval;
-        interval = setInterval(async () => {
-            if (ubicacionEnProceso.current) return;
-            try {
-                // Consultar si hay llamada pendiente para idpersona seleccionada
-                if (!idPersonaSeleccionada) return;
-                const res = await axios.get('/api/llamadas/ultima-pendiente', {
-                    params: { idpersona: idPersonaSeleccionada }
-                });
-                const hayPendiente = Array.isArray(res.data) && res.data.length > 0;
-                if (hayPendiente && !autenticado.current && !huellaEnProceso.current) {
-                    huellaEnProceso.current = true;
-                    setMostrandoHuella(true);
-                    const result = await LocalAuthentication.authenticateAsync({
-                        promptMessage: 'Por favor, pon tu huella',
-                        fallbackLabel: 'Usar código',
-                    });
-                    setMostrandoHuella(false);
-                    if (result.success) {
-                        autenticado.current = true;
-                        // Cambiar estado a 'verificado' en la llamada pendiente
-                        if (res.data[0] && res.data[0].id) {
-                            await axios.put(`/api/llamadas/${res.data[0].id}`, { estado: 'verificado' });
-                        }
-                    } else {
-                        // Cambiar estado a 'rechazado' en la llamada pendiente
-                        if (res.data[0] && res.data[0].id) {
-                            await axios.put(`/api/llamadas/${res.data[0].id}`, { estado: 'rechazado' });
-                        }
-                        Alert.alert('Autenticación fallida', 'Debes autenticarte para continuar.');
-                    }
-                    huellaEnProceso.current = false;
-                } else if (!hayPendiente) {
-                    autenticado.current = false;
-                }
-                if (autenticado.current || !hayPendiente) {
-                    ubicacionEnProceso.current = true;
-                    await obtenerUbicacion();
-                    ubicacionEnProceso.current = false;
-                }
-            } catch (e) {
-                setErrorUbicacion('No se pudo verificar el estado de llamada.');
-                ubicacionEnProceso.current = false;
-            }
-        }, 5000);
-        return () => clearInterval(interval);
-    }, [idPersonaSeleccionada]);
-
-    const obtenerUbicacion = async () => {
+    const obtenerUbicacion = useCallback(async () => {
         setErrorUbicacion(null);
         try {
             let { status } = await Location.requestForegroundPermissionsAsync();
@@ -135,13 +86,77 @@ const App = () => {
                 Alert.alert('Error', 'No se pudo enviar la ubicación al backend');
             }
 
-        } catch (e) {
-            console.error(e);
+        } catch (_e) {
             setErrorUbicacion('No se pudo obtener la ubicación');
             setUbicacion(null);
         }
-    };
+    }, [idPersonaSeleccionada]);
 
+    useEffect(() => {
+        let interval;
+        interval = setInterval(async () => {
+            if (ubicacionEnProceso.current) return;
+            try {
+                if (!idPersonaSeleccionada) return;
+                const res = await axios.get('/api/llamadas/ultima-pendiente', {
+                    params: { idpersona: idPersonaSeleccionada }
+                });
+                const hayPendiente = Array.isArray(res.data) && res.data.length > 0;
+                if (hayPendiente && !autenticado.current && !huellaEnProceso.current) {
+                    huellaEnProceso.current = true;
+                    const tieneBiometrico = await LocalAuthentication.hasHardwareAsync();
+                    const soportaHuella = await LocalAuthentication.isEnrolledAsync();
+                    if (!tieneBiometrico || !soportaHuella) {
+                        if (res.data[0] && res.data[0].id) {
+                            await axios.put(`/api/llamadas/${res.data[0].id}`, { estado: 'rechazado' });
+                        }
+                        Alert.alert('Sin huella', 'El dispositivo no tiene huella registrada.');
+                        huellaEnProceso.current = false;
+                        return;
+                    }
+                    setMostrandoHuella(true);
+                    huellaEnProceso.current = false;
+                } else if (!hayPendiente) {
+                    autenticado.current = false;
+                }
+                if (autenticado.current || !hayPendiente) {
+                    ubicacionEnProceso.current = true;
+                    await obtenerUbicacion();
+                    ubicacionEnProceso.current = false;
+                }
+            } catch (_e) {
+                setErrorUbicacion('No se pudo verificar el estado de llamada.');
+                ubicacionEnProceso.current = false;
+            }
+        }, 5000);
+        return () => clearInterval(interval);
+    }, [idPersonaSeleccionada, obtenerUbicacion]);
+
+    const handleAuth = async () => {
+        setMostrandoHuella(true);
+        const result = await LocalAuthentication.authenticateAsync({
+            promptMessage: 'Seguimiento biométrico\n\nLlamada de control. Por favor identifíquese mediante la huella.',
+            disableDeviceFallback: true,
+        });
+        setMostrandoHuella(false);
+        // Lógica de resultado
+        try {
+            const res = await axios.get('/api/llamadas/ultima-pendiente', {
+                params: { idpersona: idPersonaSeleccionada }
+            });
+            if (result.success) {
+                autenticado.current = true;
+                if (res.data[0] && res.data[0].id) {
+                    await axios.put(`/api/llamadas/${res.data[0].id}`, { estado: 'verificado' });
+                }
+            } else {
+                if (res.data[0] && res.data[0].id) {
+                    await axios.put(`/api/llamadas/${res.data[0].id}`, { estado: 'rechazado' });
+                }
+                Alert.alert('Autenticación fallida', 'Debes autenticarte para continuar.');
+            }
+        } catch {}
+    };
 
     return (
         <SafeAreaView style={Styles.container}>
