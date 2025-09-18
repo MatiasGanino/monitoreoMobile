@@ -8,7 +8,7 @@ import { Picker } from '@react-native-picker/picker';
 import Styles from "./Styles";
 
 //axios.defaults.baseURL = 'http://192.168.0.212:8080'; // Cambia aquí si usas otra IP o puerto
-axios.defaults.baseURL = 'https://flaggy-willis-sociologistically.ngrok-free.app'; // NGROK URL
+axios.defaults.baseURL = 'http://seguimiento-unsam-test.ecyt.net.ar'; // public url
 axios.interceptors.response.use(
     function (response) {
         return response;
@@ -114,7 +114,7 @@ const App = () => {
                         huellaEnProceso.current = false;
                         return;
                     }
-                    setMostrandoHuella(true);
+                    await handleAuth();
                     huellaEnProceso.current = false;
                 } else if (!hayPendiente) {
                     autenticado.current = false;
@@ -130,7 +130,7 @@ const App = () => {
             }
         }, 5000);
         return () => clearInterval(interval);
-    }, [idPersonaSeleccionada, obtenerUbicacion]);
+    }, [idPersonaSeleccionada, obtenerUbicacion, handleAuth]);
 
     const handleAuth = async () => {
         setMostrandoHuella(true);
