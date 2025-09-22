@@ -12,6 +12,7 @@
       "supportsTablet": true
     },
     "android": {
+      "allowCleartext": true,
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/punto-de-control.png",
         "backgroundColor": "#ffffff"
