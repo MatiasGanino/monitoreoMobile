@@ -5,9 +5,10 @@ import {SafeAreaView, Text, View, Alert, Image, TouchableOpacity} from "react-na
 import * as LocalAuthentication from 'expo-local-authentication';
 import * as Location from 'expo-location';
 import { Picker } from '@react-native-picker/picker';
+import { Audio } from 'expo-av';
 import Styles from "./Styles";
 
-//axios.defaults.baseURL = 'http://192.168.0.212:8080'; // Cambia aquí si usas otra IP o puerto
+//axios.defaults.baseURL = 'http://192.168.0.212:8888'; // local url
 axios.defaults.baseURL = 'http://seguimiento-unsam-test.ecyt.net.ar'; // public url
 axios.interceptors.response.use(
     function (response) {
@@ -132,13 +133,32 @@ const App = () => {
         return () => clearInterval(interval);
     }, [idPersonaSeleccionada, obtenerUbicacion, handleAuth]);
 
+    const playAuthSound = async () => {
+        try {
+            const { sound } = await Audio.Sound.createAsync(
+                require('./assets/sounds/new-notification.mp3'),
+                { shouldPlay: true, isLooping: true }
+            );
+            await sound.playAsync();
+            return sound;
+        } catch (error) {
+            console.log('Error reproduciendo sonido:', error);
+            return null;
+        }
+    };
+
     const handleAuth = async () => {
+        const sound = await playAuthSound(); // Reproducir sonido en bucle
         setMostrandoHuella(true);
         const result = await LocalAuthentication.authenticateAsync({
             promptMessage: 'Seguimiento biométrico\n\nLlamada de control. Por favor identifíquese mediante la huella.',
             disableDeviceFallback: true,
         });
         setMostrandoHuella(false);
+        if (sound) {
+            await sound.stopAsync();
+            await sound.unloadAsync();
+        }
         // Lógica de resultado
         try {
             const res = await axios.get('/api/llamadas/ultima-pendiente', {
@@ -147,11 +167,11 @@ const App = () => {
             if (result.success) {
                 autenticado.current = true;
                 if (res.data[0] && res.data[0].id) {
-                    await axios.put(`/api/llamadas/${res.data[0].id}`, { estado: 'verificado' });
+                    await axios.put(`/api/llamadas/${res.data[0].id}`, { estado: 'Verificado' });
                 }
             } else {
                 if (res.data[0] && res.data[0].id) {
-                    await axios.put(`/api/llamadas/${res.data[0].id}`, { estado: 'rechazado' });
+                    await axios.put(`/api/llamadas/${res.data[0].id}`, { estado: 'Rechazado' });
                 }
                 Alert.alert('Autenticación fallida', 'Debes autenticarte para continuar.');
             }
@@ -181,7 +201,7 @@ const App = () => {
                     </Picker>
                 </View>
                 <View style={Styles.tobilleraImageContainer}>
-                    <Image source={require('./assets/images/tobillera.jpg')} style={Styles.tobilleraImage} />
+                    <Image source={require('./assets/images/tobillera.png')} style={Styles.tobilleraImage} />
                 </View>
                 <Text style={Styles.subtitle}>
                     {mostrandoHuella ? 'Por favor, coloca tu huella para registrar tu presencia' : ''}
