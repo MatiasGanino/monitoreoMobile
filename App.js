@@ -109,7 +109,7 @@ const App = () => {
                     const soportaHuella = await LocalAuthentication.isEnrolledAsync();
                     if (!tieneBiometrico || !soportaHuella) {
                         if (res.data[0] && res.data[0].id) {
-                            await axios.put(`/api/llamadas/${res.data[0].id}`, { estado: 'rechazado' });
+                            await axios.put(`/api/llamadas/${res.data[0].id}`, { estado: 'Rechazado' });
                         }
                         Alert.alert('Sin huella', 'El dispositivo no tiene huella registrada.');
                         huellaEnProceso.current = false;
@@ -180,7 +180,10 @@ const App = () => {
 
     return (
         <SafeAreaView style={Styles.container}>
-            <View style={{ alignItems: 'center', marginTop: 20 }}>
+            <View style={Styles.logoContainer}>
+                <Image source={require('./assets/images/Logo_UNSAM.png')} style={Styles.logoImage} />
+            </View>
+            <View style={{ alignItems: 'center', marginTop: 0 }}>
                 <Text style={{ fontSize: 28, fontWeight: 'bold', color: '#fff' }}>
                     Seguimiento Biométrico
                 </Text>
@@ -206,9 +209,6 @@ const App = () => {
                 <Text style={Styles.subtitle}>
                     {mostrandoHuella ? 'Por favor, coloca tu huella para registrar tu presencia' : ''}
                 </Text>
-                <TouchableOpacity onPress={obtenerUbicacion} activeOpacity={0.7} style={{alignItems:'center'}}>
-                    <Text style={Styles.fingerprintIcon}>🌎</Text>
-                </TouchableOpacity>
                 {ubicacion && (
                     <View style={{marginTop: 20, backgroundColor: '#fff2', borderRadius: 10, padding: 12}}>
                         <Text style={{color:'#fff', fontWeight:'bold'}}>Ubicación registrada:</Text>

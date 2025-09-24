@@ -79,6 +79,15 @@ const Styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#fff4',
   },
+  logoContainer: {
+    alignItems: 'center',
+    marginVertical: 24,
+  },
+  logoImage: {
+    width: 160,
+    height: 80,
+    resizeMode: 'contain',
+  },
 });
 
 export default Styles;
