@@ -194,7 +194,7 @@ const App = () => {
                     <Text style={Styles.title}>Persona</Text>
                     <Picker
                         selectedValue={idPersonaSeleccionada}
-                        style={{ height: 50, width: 240, color: '#16325c', backgroundColor: '#fff', borderRadius: 8 }}
+                        style={{ height: 60, width: 240, color: '#16325c', backgroundColor: '#fff', borderRadius: 8, paddingVertical: 10 }} // Alto mayor y padding vertical
                         dropdownIconColor="#16325c"
                         onValueChange={(itemValue) => setIdPersonaSeleccionada(itemValue)}
                     >
@@ -206,9 +206,6 @@ const App = () => {
                 <View style={Styles.tobilleraImageContainer}>
                     <Image source={require('./assets/images/tobillera.png')} style={Styles.tobilleraImage} />
                 </View>
-                <Text style={Styles.subtitle}>
-                    {mostrandoHuella ? 'Por favor, coloca tu huella para registrar tu presencia' : ''}
-                </Text>
                 {ubicacion && (
                     <View style={{marginTop: 20, backgroundColor: '#fff2', borderRadius: 10, padding: 12}}>
                         <Text style={{color:'#fff', fontWeight:'bold'}}>Ubicación registrada:</Text>
