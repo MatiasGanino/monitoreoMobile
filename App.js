@@ -31,6 +31,8 @@ const App = () => {
     const ubicacionEnProceso = useRef(false);
 
     useEffect(() => {
+        // LIMPIEZA TEMPORAL: Borra la selección guardada al iniciar la app
+        //SecureStore.deleteItemAsync('idPersonaSeleccionada');
         // Guardar la URL base en SecureStore si lo necesitas en otros lugares
         SecureStore.setItemAsync('publicURL', axios.defaults.baseURL);
     }, []);
@@ -39,10 +41,16 @@ const App = () => {
         // Obtener personas
         console.log('Intentando obtener personas desde:', axios.defaults.baseURL + '/api/personas');
         axios.get('/api/personas')
-            .then(res => {
+            .then(async res => {
                 setPersonas(res.data);
                 console.log('Personas obtenidas:', res.data);
-                if (res.data.length > 0) setIdPersonaSeleccionada(res.data[0].id);
+                // Recuperar selección previa
+                const idGuardado = await SecureStore.getItemAsync('idPersonaSeleccionada');
+                if (idGuardado && res.data.some(p => String(p.id) === String(idGuardado))) {
+                    setIdPersonaSeleccionada(String(idGuardado));
+                } else {
+                    setIdPersonaSeleccionada(null); // No seleccionar por defecto
+                }
             })
             .catch((err) => {
                 setPersonas([]);
@@ -51,7 +59,19 @@ const App = () => {
             });
     }, []);
 
+    // Handler para guardar selección
+    const handlePersonaSeleccionada = (itemValue) => {
+        setIdPersonaSeleccionada(itemValue ? String(itemValue) : null);
+        if (itemValue) {
+            SecureStore.setItemAsync('idPersonaSeleccionada', String(itemValue));
+        } else {
+            SecureStore.deleteItemAsync('idPersonaSeleccionada');
+        }
+    };
+
     const obtenerUbicacion = useCallback(async () => {
+        // Validar que el idPersonaSeleccionada sea válido y no null, undefined o string vacío
+        if (!idPersonaSeleccionada || idPersonaSeleccionada === 'null' || idPersonaSeleccionada === '') return; // No enviar ubicación si no hay persona seleccionada
         setErrorUbicacion(null);
         try {
             let { status } = await Location.requestForegroundPermissionsAsync();
@@ -72,7 +92,6 @@ const App = () => {
 
             // Enviar al backend usando axios
             try {
-                if (!idPersonaSeleccionada) return;
                 const response = await axios.post('/api/ubicaciones', {
                     idPersona: idPersonaSeleccionada, // Usar el ID seleccionado
                     latitud: nuevaUbicacion.latitud,
@@ -153,6 +172,8 @@ const App = () => {
         const result = await LocalAuthentication.authenticateAsync({
             promptMessage: 'Seguimiento biométrico\n\nLlamada de control. Por favor identifíquese mediante la huella.',
             disableDeviceFallback: true,
+            promptDescription: 'Use su huella para registrar su presencia',
+            cancelLabel: 'Cancelar'
         });
         setMostrandoHuella(false);
         if (sound) {
@@ -194,12 +215,13 @@ const App = () => {
                     <Text style={Styles.title}>Persona</Text>
                     <Picker
                         selectedValue={idPersonaSeleccionada}
-                        style={{ height: 60, width: 240, color: '#16325c', backgroundColor: '#fff', borderRadius: 8, paddingVertical: 10 }} // Alto mayor y padding vertical
+                        style={{ height: 60, width: 240, color: '#16325c', backgroundColor: '#fff', borderRadius: 8, paddingVertical: 10 }}
                         dropdownIconColor="#16325c"
-                        onValueChange={(itemValue) => setIdPersonaSeleccionada(itemValue)}
+                        onValueChange={handlePersonaSeleccionada}
                     >
+                        <Picker.Item label="Seleccione una persona..." value={null} />
                         {personas.map(persona => (
-                            <Picker.Item key={persona.id} label={persona.nombre || `Persona ${persona.id}`} value={persona.id} />
+                            <Picker.Item key={persona.id} label={persona.nombre || `Persona ${persona.id}`} value={String(persona.id)} />
                         ))}
                     </Picker>
                 </View>
